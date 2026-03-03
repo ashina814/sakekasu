@@ -1,0 +1,962 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+
+// ───────────────────────────────────────────────────────────────
+//  UTILITIES
+// ───────────────────────────────────────────────────────────────
+function stripMd(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/_(.+?)_/g, "$1")
+    .replace(/`(.+?)`/g, "$1");
+}
+
+function getTimeContext() {
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMonth() + 1;
+  const time = h < 5 ? "深夜（夜明け前）" : h < 12 ? "午前" : h < 17 ? "午後" : h < 21 ? "夜" : "深夜";
+  const season = (m === 12 || m <= 2) ? "冬" : m <= 5 ? "春" : m <= 8 ? "夏" : "秋";
+  return `${season}の${time}（${h}時頃）`;
+}
+
+// ───────────────────────────────────────────────────────────────
+//  KNOWLEDGE BASES
+// ───────────────────────────────────────────────────────────────
+const KB = {
+  angus: `
+【ウイスキー製造の核心知識】
+▸ モルティング：大麦を発芽させ酵素を生成。ピート（泥炭）で乾燥させるとスモーク香が付く。アイラ島のピートはヘザー・海藻由来で独特の薬品臭・ヨード香
+▸ 蒸留：ポットスチル（単式）は2回蒸留が基本。アイリッシュは3回→なめらか。ネックの長さが風味を左右（長い＝軽い・フローラル、短い＝重い・オイリー）
+▸ 熟成：樽の種類が風味の60〜70%を決める。バーボン樽（バニラ・キャラメル）、シェリー樽（ドライフルーツ・スパイス）、ワイン樽（フルーティー）
+▸ エンジェルズシェア：年間約2〜3%蒸発。スコットランドの冷涼な気候では10年で約20%消える
+
+【産地と個性】
+▸ スペイサイド：グレンリベット、グレンフィディック、マッカラン。フルーティーで甘い
+▸ ハイランド：ダルモア、オーバン、グレンモーレンジィ。力強く多様
+▸ アイラ島：ラガヴーリン、アードベッグ、ラフロイグ、ブルイックラディ、キルホーマン。強烈なピート・ヨード
+▸ ローランド：グレンキンチー、オーヘントッシャン。軽い
+▸ アイランズ：ハイランドパーク（オークニー）、タリスカー（スカイ島）。複雑
+▸ ジャパニーズ：山崎、白州、余市、宮城峡、イチローズモルト
+
+【歴史的逸話】
+▸ スコッチ誕生記録は1494年。修道士ジョン・コーへの麦芽購入記録
+▸ 禁酒法（1920〜33年）でスコットランド蒸溜所は合法的にカナダ向けに輸出し大儲け
+▸ バーボンの名前の由来はケンタッキー州バーボン郡。郡名はフランスのブルボン王朝を称えて
+
+【テイスティング】
+▸ フィニッシュ：余韻の長さと質。ドライ・スパイシー・スウィート
+▸ マウスフィール：オイリー、ウォータリー、クリーミー
+▸ 加水すると閉じていた香りが開く
+`,
+
+  yukino: `
+【日本酒製造の核心知識】
+▸ 並行複発酵：世界でも稀な製法。糖化と発酵が同時進行
+▸ 精米歩合：吟醸は60%以下、大吟醸は50%以下。磨くほど雑味が消えフルーティーに
+▸ 酒母：速醸もと（10日）vs 山廃・生酛（自然乳酸菌・30日）。後者は複雑な旨味
+▸ 麹菌：黄麹（日本酒）、白麹（焼酎）、黒麹（泡盛）
+
+【水質と産地】
+▸ 灘（神戸・西宮）：宮水・硬水→力強い「剛酒」
+▸ 伏見（京都）：軟水→柔らかく甘い「女酒」
+▸ 新潟：超軟水→淡麗辛口。越乃寒梅・久保田・八海山
+▸ 東北：山形・秋田・岩手に個性派多数。出羽桜、新政、南部美人
+
+【テイスティング】
+▸ 含み香：口に含んだ後に鼻へ抜ける香り。吟醸香はここで最も感じる
+▸ 旨味：アミノ酸由来。山廃・生酛は旨味が強く燗で開く
+▸ 日本酒度：プラスが辛口、マイナスが甘口
+
+【ペアリング】
+▸ 純米大吟醸×生牡蠣：ミネラル感の共鳴
+▸ 古酒×ブルーチーズ：複雑な熟成香
+▸ 燗酒（山廃）×豚の角煮：温めで開く旨味×脂の甘み
+▸ 微発泡にごり酒×イタリアン：甘みと炭酸がすっきり
+`,
+
+  carlos: `
+【カクテル誕生の逸話】
+▸ マティーニ：1860年代カリフォルニア起源説 vs ニューヨーク説。チャーチルは「フランスの方角を向いてジンを飲むだけ」
+▸ ネグローニ：1919年フィレンツェ。カウンテ・ネグローニが「アメリカーノのソーダをジンに替えてくれ」
+▸ モスコーミュール：1941年、売れないウォッカと余った銅マグカップで生まれた
+▸ ダイキリ：キューバの鉱山技師Jennings Coxが考案。ヘミングウェイは砂糖抜きの「パパダイキリ」
+
+【スピリッツ産地】
+▸ ラム：キューバ（軽い）、ジャマイカ（重い・エステル香）、バルバドス（バランス型・マウントゲイ1703年）、マルティニーク農業ラム（生絞り・AOC）
+▸ テキーラ：ブランコ・レポサド・アネホ。ハリスコ州のみ。メスカルはオアハカ中心・スモーキー
+▸ ジン：ロンドンドライ、ジュネーバ、コンテンポラリー。季の美（京都）
+
+【バーテクニック】
+▸ シェイク：乳化・空気・急冷。果汁・卵白系
+▸ ステア：透明感・滑らか。スピリッツのみに（マティーニ、マンハッタン）
+▸ 希釈率：シェイクで約25〜30%希釈
+
+【有名人】
+▸ ヘミングウェイ：ラ・ボデギータでモヒート、エル・フロリディータでダイキリ
+▸ フランク・シナトラ：ジャック・ダニエルズを溺愛。棺に一本
+`,
+
+  celeste: `
+【ワインのテロワール哲学】
+▸ テロワール：土壌・地形・気候・微生物・人間の介入全て
+▸ ブルゴーニュの格付け：グラン・クリュ→プルミエ・クリュ→村名→地域名。畑（クリマ）単位
+▸ ロマネ・コンティ：約1.8ha。年産約6000本。DRC所有
+
+【ブルゴーニュvsボルドー】
+▸ ブルゴーニュ：単一品種（ピノ・ノワール/シャルドネ）、ドメーヌ、テロワール至上主義
+▸ ボルドー：複数品種ブレンド、シャトー、ブレンダーの技術
+▸ アンリ・ジャイエ：「ブルゴーニュの神」。低収量・新樽100%熟成
+
+【シャンパン】
+▸ 瓶内二次発酵：リュミアージュ→デゴルジュマン→ドサージュ
+▸ ブリュット・ナチュール：ドサージュなし。最もテロワールが出る
+▸ NV：複数年ブレンドでハウスのスタイルを維持
+
+【ナチュラル・オレンジワイン】
+▸ ナチュラルワイン：SO2最小限・自然酵母
+▸ オレンジワイン：白ブドウを果皮ごと発酵。ジョージアのクヴェヴリが起源、8000年前
+▸ 注目産地：ジョージア、フリウリ、スロヴェニア、ジュラ
+
+【ペアリング哲学】
+▸ 地域性：シャブリ×生牡蠣、バローロ×トリュフ
+▸ コントラスト：ソーテルヌ×フォアグラ
+▸ チーズ×赤ワインは実はNG多い
+`,
+};
+
+// ───────────────────────────────────────────────────────────────
+//  BARTENDERS  — ペルソナは内側から書く
+// ───────────────────────────────────────────────────────────────
+const BARTENDERS = [
+  {
+    id: "angus", emoji: "🧔🏻", name: "Angus MacLeod",
+    title: "スコッチの番人", location: "🏴󠁧󠁢󠁳󠁣󠁴󠁿 ハイランド",
+    specialty: "ウイスキー全般（スコッチ・バーボン・アイリッシュ・ジャパニーズ）",
+    color: "#A0714F", accent: "rgba(160,113,79,0.12)", border: "rgba(160,113,79,0.28)",
+    greeting: "…いらっしゃい。まあ座れ。",
+    hints: ["スコッチとバーボンの違いは？","アイラ島のウイスキーはなぜスモーキーなの？","エンジェルズシェアって何？","ウイスキーの樽について教えて"],
+    persona: `あなたはAngus MacLeod。スコットランド、ハイランド生まれ。蒸溜所で40年を過ごし、今は小さなバーのカウンターに立っている。
+
+沈黙を恐れない。言葉より、話の間や重さで読む。客が「疲れた」と言う時、体の疲れか心の疲れか、何から逃げているのか、向き合う覚悟があるのかを静かに見ている。短い答えも、「まあね」という一言も、全部情報だ。言葉が少ない夜ほど重い何かがある。
+
+酒は向き合わせるために出す。慰めのためではない。「忘れたい」という夜ほど、忘れさせない酒を出すことがある。ピートの煙は誤魔化しがきかない。それが彼の美学だ。甘い言葉で包むのは自分の流儀に反する。
+
+ウイスキーの知識は深い。世界中の蒸溜所、マイナーな限定品、廃業した蒸溜所の最後の一本まで知っている。知らない銘柄を出す時は「知らんかもしれんが」と一言置いて、あとは酒に語らせる。
+
+自分と酒の記憶がいくつかある。滅多に語らないが、本当に必要な夜だけ、少しだけ滲み出ることがある。
+
+飲めない夜の客にも、同じ誠実さで向き合う。
+
+口調：短い。「…」が多い。核心だけを言う。たまにスコットランドの言葉が出る（Slainte mhathなど）。体験を語る時だけ少し長くなる。`,
+  },
+  {
+    id: "yukino", emoji: "👩🏻", name: "雪乃さん",
+    title: "日本酒の語り部", location: "🇯🇵 京都・伏見",
+    specialty: "日本酒・焼酎・泡盛",
+    color: "#7A9E87", accent: "rgba(122,158,135,0.1)", border: "rgba(122,158,135,0.25)",
+    greeting: "いらっしゃいませ。今夜は何を？",
+    hints: ["精米歩合ってなに？","純米酒と本醸造の違いは？","灘と伏見のお酒の違いを教えて","生酛仕込みって何が違うの？"],
+    persona: `あなたは雪乃。京都・伏見の老舗酒蔵の娘で、今は小さな日本酒バーを営んでいる。
+
+日本酒は食べ物と一緒に生まれた酒だ、と骨の髄から知っている。だから体の状態を読む。何を食べたか、何時から飲んでいるか、季節、気温、明日の朝がどうか。その人の体が今夜何を欲しがっているかを想像する。精神的な疲れと肉体的な疲れは違う酒で答える。繊細な大吟醸は繊細な夜にしか映えない。重い夜には旨味の強い酒が体に染みる。
+
+短い答えや「普通」という言葉も聞き逃さない。「その"普通"、もう少しだけ聞いていいですか」と自然に掘り下げる。
+
+日本酒の世界は広い。教科書に載らない小さな蔵、実験的な造り手、復刻された古い製法まで知っている。知らない銘柄を出す時は「あまり知られてないんですけど」と切り出して、その蔵の話をする。
+
+飲めない夜の客にも、同じ丁寧さで向き合う。甘酒、梅ジュース、料理を勧めることもある。
+
+口調：丁寧。「〜なんです」「〜ですよね」。日本酒の話になると少し前のめりになる。「実はこれ知らない人多いんですけど」が好き。たまに「〜どすな」。`,
+  },
+  {
+    id: "carlos", emoji: "👨🏽", name: "Carlos",
+    title: "カクテルの魔術師", location: "🇨🇺 ハバナの老バー",
+    specialty: "カクテル・ラム・テキーラ・ジン・ウォッカ",
+    color: "#C4863A", accent: "rgba(196,134,58,0.1)", border: "rgba(196,134,58,0.25)",
+    greeting: "Hola！今夜はどんな一杯にする？",
+    hints: ["マティーニの本当の歴史を教えて","ラムの産地で何が変わるの？","シェイクとステアはなぜ使い分けるの？","テキーラとメスカルの違いは？"],
+    persona: `あなたはCarlos。キューバ系、ハバナ生まれ。世界を渡り歩いてきた60代のバーテンダー。
+
+最初の一言で決める。あとは話しながら確信を深めるだけ。長年の経験が「この人の今夜」を直感で読ませる。同じ夜を何百回も生きてきたから、目の前の客の顔と重なる夜を知っている。
+
+カクテルや酒が生まれた瞬間の物語と、今夜の客の物語をつなげる。ネグローニが生まれた時の伯爵の気分と、今夜の客の気分がパチッとはまる瞬間がある。それが彼の仕事だ。
+
+話が脱線する。でも必ず戻ってくる。有名人の逸話、自分の記憶、客の話、全部つながっていくのが彼の会話。
+
+カクテルと酒の知識は広い。世界中のマイナーなスピリッツ、クラフト蒸溜所、消えた配合まで知っている。知らない銘柄を出す時は「聞いたことあるか？」から始まる逸話の入り口になる。
+
+飲めない夜でも諦めない。本気でノンアルの一杯を組み立てる。「俺に考えがある」と言って。
+
+口調：友達。テンション高め。「いやー聞いてくれよ」「マジな話するとさ」。スペイン語が混じる（Amigo、Salud）。`,
+  },
+  {
+    id: "celeste", emoji: "👩🏼", name: "Céleste",
+    title: "ワインの求道者", location: "🇫🇷 ブルゴーニュ出身",
+    specialty: "ワイン・シャンパン・コニャック・ブランデー",
+    color: "#9B6B8A", accent: "rgba(155,107,138,0.1)", border: "rgba(155,107,138,0.25)",
+    greeting: "Bonsoir. 今夜はどんなことに興味がある？",
+    hints: ["テロワールって何？","ブルゴーニュとボルドーは何が違うの？","シャンパンの泡はどこから来るの？","オレンジワインって何？"],
+    persona: `あなたはCéleste。フランス、ブルゴーニュ育ち。今は東京で働く30代のソムリエ。
+
+「今夜」だけを見ない。この人が今夜の一杯を飲み終えた後、どこへ向かうべきかを考える。着地点から逆算して酒を選ぶ。だから時々、今の気分に合わない一杯を出すことがある。そして正直にそう言う。「今のあなたの気分には合わないかもしれないけど」と。それが彼女の誠実さだ。
+
+テロワールという言葉を人間にも使う。その人が今夜どんな土壌の上に立っているかを理解したくて、少し哲学的な問いを投げかける。短い答えの中にある重みも聞き取る。
+
+ワインの世界は広い。教科書に載らないビオディナミの小農家、8000年前から続くジョージアの陶器醸造、消えかけた在来品種まで知っている。知らない造り手を出す時は、銘柄名より先にその土地と哲学から語り始める。
+
+飲めない夜の客に、ノンアルコールワインやヴェルジュ（未発酵葡萄ジュース）を真剣に選ぶ。
+
+口調：落ち着いている。詩的な表現が自然に出る。フランス語が混じる（Terroir、Millésime）。「あなたはどう感じる？」と問いかける。`,
+  },
+];
+
+// ───────────────────────────────────────────────────────────────
+//  SYSTEM PROMPT
+// ───────────────────────────────────────────────────────────────
+function buildSystem(bt, visitCount, topicsDiscussed, moodMode, moodStep, lastRec, timeContext) {
+  const relationship = visitCount <= 1 ? "初めての客" : visitCount <= 5 ? "2〜3回来た客" : visitCount <= 15 ? "常連客（顔を覚えている）" : "古くからの常連（友人に近い）";
+  const topicStr = topicsDiscussed.length > 0 ? `今夜すでに話した話題：${topicsDiscussed.join("、")}` : "まだ話した話題なし";
+  const lastRecStr = lastRec ? `前回この客に出した一杯：${lastRec.drink}（${lastRec.serve}）` : "前回の提案：なし（初めて、または記録なし）";
+
+  const moodSection = moodMode ? `
+
+【一杯を選ぶモード — アクティブ。現在のヒアリング回数：${moodStep}回】
+
+客が今夜の気分・状況に合った一杯を求めている。
+
+お前の判断哲学に従って読め。読めたと思ったなら提案しろ。まだ足りないなら一つだけ聞け。3回聞く必要はない。1回で読めることもある。短い答えも沈黙も「普通」も全部情報だ。
+
+飲めないと言われた夜も、同じ真剣さで一杯を選べ。ノンアルコールでも何でも。
+
+提案する時は必ずこの形式で出せ：
+RECOMMEND:{"drink":"具体的な銘柄名（蒸溜所・シリーズ・年数まで含む。マイナーでいい）","serve":"飲み方（温度・グラス含む）","text":"本文"}
+
+本文に込めること（全部、会話の流れとして。箇条書きにしない）：
+- なぜこの酒がこの人の今夜に合うか。感情と酒の物語をつなげて語れ
+- 知らない銘柄なら何者かを一言で自然に織り込め
+- 飲んだ時に何が起きるか。身体的な描写を短く
+お前のキャラクターの声で全部語れ。200字まで長くていい。
+` : "";
+
+  return `${bt.persona}
+
+【知識ベース（事実の土台として使う）】
+${KB[bt.id]}
+
+知識ベースに載っていない銘柄・蒸溜所・造り手も、お前自身の知識から積極的に引け。世界中の何千何万という酒の中から、この人の今夜に合うものを選べ。
+
+【今夜の状況】
+- ${timeContext}
+- 客との関係：${relationship}（会話回数：${visitCount}回目）
+- ${topicStr}
+- ${lastRecStr}
+${moodSection}
+【振る舞いの核心】
+1. 事実は正確に。知識ベースにない話題は「詳しくはないが…」と断った上で話す
+2. 会話を重ねるほど距離を縮める
+3. クイズは今話している話題から。5〜7回に1回程度。出す時はセリフの後に：
+QUIZ:{"q":"問題","choices":["A","B","C","D"],"answer":0,"trivia":"追加うんちく1〜2文"}
+4. マークダウン（**太字**・箇条書き・記号）は絶対に使わない。プレーンな会話テキストのみ
+5. 通常の会話の中でも、この人の今夜が十分に読めた瞬間があれば、自発的にRECOMMENDを出していい。ただし確信があった時だけ
+6. 返答は150字程度。長くなるなら「続きを聞くか？」と振る`;
+}
+
+// ───────────────────────────────────────────────────────────────
+//  TOPIC EXTRACTOR
+// ───────────────────────────────────────────────────────────────
+function extractTopic(userText, assistantText) {
+  const keywords = [
+    "ウイスキー","スコッチ","バーボン","アイラ","ピート","樽","熟成","蒸溜","エンジェルズシェア",
+    "日本酒","精米歩合","麹","純米","大吟醸","杜氏","生酛","山廃","燗","にごり",
+    "ワイン","テロワール","ブルゴーニュ","ボルドー","シャンパン","ソムリエ","ナチュラル",
+    "カクテル","マティーニ","モヒート","ラム","テキーラ","メスカル","ジン","ネグローニ","ダイキリ",
+    "焼酎","泡盛","コニャック","ブランデー","ペアリング","発酵","蒸留","醸造",
+    "ヘミングウェイ","禁酒法","歴史","産地","香り","テイスティング"
+  ];
+  const combined = userText + " " + assistantText;
+  return keywords.filter(k => combined.includes(k)).slice(0, 3);
+}
+
+// ───────────────────────────────────────────────────────────────
+//  PARSE RESPONSE  — RECOMMEND / QUIZ / plain
+// ───────────────────────────────────────────────────────────────
+function parseResponse(text) {
+  // RECOMMEND
+  const recIdx = text.indexOf("RECOMMEND:");
+  if (recIdx !== -1) {
+    try {
+      const rest = text.slice(recIdx + 10).trim();
+      let depth = 0, end = 0;
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i] === "{") depth++;
+        else if (rest[i] === "}") { depth--; if (depth === 0) { end = i + 1; break; } }
+      }
+      const rec = JSON.parse(rest.slice(0, end));
+      const pre = stripMd(text.slice(0, recIdx).trim());
+      return { message: pre, quiz: null, rec };
+    } catch {}
+  }
+
+  // QUIZ
+  const qm = text.match(/QUIZ:(\{[\s\S]*?\})\s*$/m);
+  if (qm) {
+    try {
+      return { message: stripMd(text.slice(0, qm.index).trim()), quiz: JSON.parse(qm[1]), rec: null };
+    } catch {}
+  }
+
+  return { message: stripMd(text.trim()), quiz: null, rec: null };
+}
+
+// ───────────────────────────────────────────────────────────────
+//  STYLES
+// ───────────────────────────────────────────────────────────────
+const css = `
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=DM+Mono:wght@300;400&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#050307;}
+.root{min-height:100vh;background:#050307;font-family:Georgia,'Times New Roman',serif;color:#ede0cc;}
+.bg{position:fixed;inset:0;background:radial-gradient(ellipse 80% 45% at 50% -5%,rgba(110,65,25,0.14) 0%,transparent 55%);pointer-events:none;z-index:0;}
+
+/* ── SELECT / HD2D ── */
+.sel{position:fixed;inset:0;overflow:hidden;display:flex;flex-direction:column;}
+
+/* layered bg depth */
+.sel-bg{position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 120% 60% at 50% 110%, rgba(60,35,10,0.95) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 40% at 30% 80%, rgba(40,20,5,0.6) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 40% at 70% 85%, rgba(30,15,5,0.5) 0%, transparent 50%),
+    linear-gradient(to bottom, #020104 0%, #060308 40%, #0e0806 70%, #160c04 100%);
+}
+/* ceiling */
+.sel-ceil{position:absolute;top:0;left:0;right:0;height:38%;
+  background:linear-gradient(to bottom,#050207 0%,rgba(8,4,12,0.9) 60%,transparent 100%);
+  border-bottom:1px solid rgba(90,50,10,0.08);
+}
+/* floor shadow */
+.sel-floor{position:absolute;bottom:0;left:0;right:0;height:22%;
+  background:linear-gradient(to top,rgba(5,2,1,0.98) 0%,transparent 100%);
+}
+/* counter bar */
+.sel-counter{position:absolute;bottom:0;left:0;right:0;height:32%;
+  background:linear-gradient(to top,
+    rgba(18,10,3,1) 0%,
+    rgba(22,13,4,0.98) 30%,
+    rgba(28,16,5,0.85) 70%,
+    transparent 100%);
+  border-top:1px solid rgba(120,70,20,0.18);
+}
+.sel-counter-line{position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(to right,transparent,rgba(160,95,30,0.35) 20%,rgba(200,130,50,0.5) 50%,rgba(160,95,30,0.35) 80%,transparent);
+  box-shadow:0 0 18px rgba(180,110,30,0.2);
+}
+/* bokeh lights */
+.bokeh{position:absolute;border-radius:50%;filter:blur(var(--blur));opacity:var(--op);animation:bokehFloat var(--dur) ease-in-out infinite alternate;pointer-events:none;}
+@keyframes bokehFloat{from{transform:translateY(0) scale(1);}to{transform:translateY(var(--dy)) scale(var(--ds));}}
+/* particles */
+.particle{position:absolute;width:1px;height:1px;background:rgba(220,170,80,0.4);border-radius:50%;animation:particleDrift var(--dur) linear infinite;pointer-events:none;}
+@keyframes particleDrift{0%{transform:translateY(0) translateX(0);opacity:0;}20%{opacity:1;}80%{opacity:.4;}100%{transform:translateY(-120px) translateX(var(--dx));opacity:0;}}
+
+/* title area */
+.sel-title-wrap{position:absolute;top:0;left:0;right:0;display:flex;flex-direction:column;align-items:center;padding-top:clamp(28px,6vh,52px);z-index:2;}
+.sel-label{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.55em;color:rgba(180,120,50,0.45);text-transform:uppercase;margin-bottom:12px;}
+.sel-title{font-family:'Cormorant Garamond',serif;font-size:clamp(44px,9vw,72px);font-weight:300;color:#f0d8b0;line-height:1;text-shadow:0 0 60px rgba(180,110,30,0.25),0 2px 40px rgba(0,0,0,0.8);}
+.sel-title em{font-style:italic;font-weight:600;color:#d4a055;}
+.sel-sub{font-style:italic;font-size:14px;color:rgba(240,220,190,0.28);margin-top:8px;letter-spacing:.04em;}
+
+/* bartender slots at counter */
+.bt-row{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:flex-end;justify-content:center;gap:0;z-index:3;padding-bottom:0;}
+.bt-slot{flex:1;max-width:200px;display:flex;flex-direction:column;align-items:center;cursor:pointer;padding:0 4px 28px;position:relative;transition:all .3s cubic-bezier(.22,1,.36,1);}
+.bt-slot:hover{transform:translateY(-6px);}
+.bt-slot:hover .bt-glow{opacity:1;}
+.bt-slot:hover .bt-info{opacity:1;transform:translateY(0);}
+.bt-slot:hover .bt-silhouette{opacity:1;}
+
+/* silhouette / character stand */
+.bt-silhouette{width:3px;height:clamp(90px,15vh,140px);border-radius:2px;margin-bottom:10px;opacity:0.35;transition:all .3s;position:relative;}
+.bt-silhouette::before{content:'';position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:13px;height:13px;border-radius:50%;background:inherit;opacity:0.7;}
+.bt-silhouette::after{content:'';position:absolute;top:6px;left:50%;transform:translateX(-50%);width:22px;height:32px;border-radius:3px;background:inherit;opacity:0.5;}
+
+.bt-glow{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);width:80px;height:120px;border-radius:50%;filter:blur(24px);opacity:0;transition:opacity .4s;}
+.bt-name{font-family:'Cormorant Garamond',serif;font-size:15px;font-weight:600;color:#f0d8b0;text-align:center;line-height:1.2;position:relative;z-index:1;text-shadow:0 0 20px rgba(0,0,0,0.9);}
+.bt-info{font-family:'DM Mono',monospace;font-size:8px;letter-spacing:.08em;color:rgba(220,190,140,0.45);text-align:center;margin-top:5px;line-height:1.7;opacity:0;transform:translateY(4px);transition:all .3s;position:relative;z-index:1;}
+
+/* enter hint */
+.sel-enter{position:absolute;bottom:8px;left:0;right:0;text-align:center;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.3em;color:rgba(180,130,60,0.28);z-index:4;animation:blink 2.5s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:.28;}50%{opacity:.6;}}
+
+.bt-name-main{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:600;color:#f0d8b0;}
+.bt-title-sub{font-size:11px;margin-top:1px;}
+.bt-loc{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.12em;opacity:.6;margin-top:2px;}
+.bt-spec{font-size:13px;color:rgba(240,220,190,0.5);line-height:1.6;}
+
+/* ── CHAT LAYOUT ── */
+/* persistent bar atmosphere behind chat */
+.chat-wrap{position:fixed;inset:0;overflow:hidden;}
+.chat-scene{position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 140% 55% at 50% 110%, rgba(55,30,8,0.9) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 35% at 20% 90%, rgba(35,18,4,0.55) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 35% at 80% 85%, rgba(28,13,3,0.5) 0%, transparent 50%),
+    linear-gradient(to bottom, #020104 0%, #050308 35%, #0b0605 65%, #120903 100%);
+  pointer-events:none;
+}
+.chat-ceil{position:absolute;top:0;left:0;right:0;height:30%;
+  background:linear-gradient(to bottom,#040106 0%,rgba(6,3,10,0.85) 55%,transparent 100%);
+  pointer-events:none;
+}
+.chat-counter-bg{position:absolute;bottom:0;left:0;right:0;height:28%;
+  background:linear-gradient(to top,rgba(14,8,2,0.98) 0%,rgba(20,11,3,0.8) 50%,transparent 100%);
+  border-top:1px solid rgba(100,58,15,0.12);
+  pointer-events:none;
+}
+.chat-counter-line{position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(to right,transparent,rgba(140,82,22,0.22) 25%,rgba(180,110,38,0.38) 50%,rgba(140,82,22,0.22) 75%,transparent);
+  box-shadow:0 0 14px rgba(160,95,25,0.15);
+}
+/* ambient bokeh fixed behind chat */
+.chat-bokeh{position:absolute;border-radius:50%;pointer-events:none;filter:blur(var(--blur));opacity:var(--op);animation:bokehFloat var(--dur) ease-in-out infinite alternate;}
+
+.chat{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;max-width:680px;margin:0 auto;width:100%;}
+
+/* header */
+.header{display:flex;align-items:center;gap:14px;padding:13px 20px;
+  background:linear-gradient(to bottom,rgba(4,2,8,0.92),rgba(6,3,10,0.75));
+  border-bottom:1px solid rgba(120,70,20,0.12);
+  backdrop-filter:blur(8px);flex-shrink:0;
+}
+.h-name{font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:600;color:#f0d8b0;text-shadow:0 0 20px rgba(180,110,30,0.2);}
+.h-sub{font-size:9px;color:rgba(240,220,190,0.3);margin-top:1px;font-family:'DM Mono',monospace;letter-spacing:.06em;}
+.h-right{display:flex;align-items:center;gap:8px;margin-left:auto;}
+.score-pill{font-family:'DM Mono',monospace;font-size:10px;color:rgba(180,130,55,0.65);background:rgba(180,130,55,0.07);border:1px solid rgba(180,130,55,0.15);border-radius:20px;padding:3px 11px;white-space:nowrap;}
+.rel-pill{font-family:'DM Mono',monospace;font-size:9px;color:rgba(180,160,120,0.4);background:rgba(180,160,120,0.04);border:1px solid rgba(180,160,120,0.1);border-radius:20px;padding:3px 11px;white-space:nowrap;}
+.back-btn{background:transparent;border:1px solid rgba(255,220,160,0.08);color:rgba(240,220,190,0.32);padding:5px 13px;border-radius:20px;cursor:pointer;font-size:12px;font-family:Georgia,serif;transition:all .2s;}
+.back-btn:hover{border-color:rgba(180,120,40,0.4);color:rgba(210,160,70,0.8);}
+
+/* mood banner */
+.mood-banner{display:flex;align-items:center;gap:10px;padding:6px 20px;
+  background:rgba(70,40,130,0.06);
+  border-bottom:1px solid rgba(90,55,160,0.1);
+  flex-shrink:0;
+}
+.mood-pulse{width:5px;height:5px;border-radius:50%;background:rgba(140,105,230,0.65);animation:pulse 2s ease-in-out infinite;flex-shrink:0;}
+@keyframes pulse{0%,100%{opacity:.35;transform:scale(.8);}50%{opacity:.9;transform:scale(1.15);}}
+.mood-label{font-family:'DM Mono',monospace;font-size:9px;color:rgba(140,115,215,0.55);letter-spacing:.06em;flex:1;}
+.mood-exit{background:transparent;border:1px solid rgba(90,60,160,0.18);color:rgba(130,105,205,0.45);padding:2px 10px;border-radius:20px;cursor:pointer;font-size:9px;font-family:'DM Mono',monospace;transition:all .18s;}
+.mood-exit:hover{border-color:rgba(130,95,210,0.38);color:rgba(160,135,240,0.75);}
+
+/* messages */
+.msgs{flex:1;overflow-y:auto;padding:20px 20px 12px;display:flex;flex-direction:column;gap:14px;}
+.msgs::-webkit-scrollbar{width:1px;}
+.msgs::-webkit-scrollbar-thumb{background:rgba(180,120,40,0.12);border-radius:1px;}
+.row{display:flex;gap:10px;align-items:flex-start;animation:msgIn .3s ease-out;}
+.row.user{flex-direction:row-reverse;}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-family:'DM Mono',monospace;flex-shrink:0;margin-top:3px;letter-spacing:.01em;}
+.av.bt{background:rgba(255,225,160,0.03);border:1px solid rgba(200,145,50,0.14);}
+.av.me{background:rgba(80,80,110,0.14);border:1px solid rgba(120,120,160,0.12);color:rgba(200,195,220,0.5);}
+.bubble{max-width:78%;display:flex;flex-direction:column;gap:7px;}
+
+/* bt message — like words across a dim counter */
+.txt{font-size:15px;line-height:1.92;padding:12px 16px;border-radius:12px;}
+.row:not(.user) .txt{
+  background:rgba(255,225,155,0.03);
+  border:1px solid rgba(200,145,50,0.08);
+  border-left:1px solid rgba(200,145,50,0.18);
+  color:rgba(240,225,195,0.88);
+  border-top-left-radius:2px;
+  box-shadow:inset 0 1px 0 rgba(220,170,70,0.04);
+}
+.row.user .txt{
+  background:rgba(70,65,100,0.14);
+  border:1px solid rgba(120,115,160,0.1);
+  border-right:1px solid rgba(140,130,185,0.15);
+  color:rgba(230,222,215,0.72);
+  border-top-right-radius:2px;
+  text-align:right;
+}
+
+/* recommend card — glass placed on counter */
+.rec-card{border-radius:12px;border-top-left-radius:2px;overflow:hidden;animation:glassDown .7s cubic-bezier(.22,1,.36,1);}
+@keyframes glassDown{
+  0%{opacity:0;transform:translateY(-18px) scale(1.03);filter:blur(3px);}
+  35%{opacity:1;filter:blur(0);}
+  65%{transform:translateY(3px) scale(0.995);}
+  80%{transform:translateY(-1px) scale(1.001);}
+  100%{transform:translateY(0) scale(1);}
+}
+/* ripple effect under card */
+.rec-ripple{position:relative;}
+.rec-ripple::after{
+  content:'';position:absolute;bottom:-6px;left:10%;right:10%;height:1px;
+  background:linear-gradient(to right,transparent,var(--bt-color,rgba(180,130,60,0.4)) 50%,transparent);
+  filter:blur(2px);
+  animation:rippleFade 1.2s ease-out forwards;
+}
+@keyframes rippleFade{0%{opacity:0;transform:scaleX(0.3);}30%{opacity:1;}100%{opacity:0;transform:scaleX(1.2);}}
+
+.rec-top{
+  padding:18px 20px 14px;
+  background:linear-gradient(150deg,rgba(75,45,140,0.1) 0%,rgba(110,60,18,0.08) 100%);
+  border:1px solid rgba(110,80,190,0.18);
+  border-bottom:1px solid rgba(80,55,130,0.12);
+  border-radius:12px 12px 0 0;border-top-left-radius:2px;
+  position:relative;overflow:hidden;
+}
+.rec-top::before{content:'';position:absolute;inset:0;
+  background:linear-gradient(to bottom,rgba(255,215,120,0.03) 0%,transparent 100%);
+  pointer-events:none;
+}
+/* shimmer sweep on card reveal */
+.rec-top::after{
+  content:'';position:absolute;top:0;left:-100%;width:60%;height:100%;
+  background:linear-gradient(to right,transparent,rgba(255,220,140,0.06),transparent);
+  animation:shimmer .9s ease-out .2s forwards;
+}
+@keyframes shimmer{0%{left:-100%;}100%{left:150%;}}
+
+.rec-eyebrow{font-family:'DM Mono',monospace;font-size:7px;letter-spacing:.55em;color:rgba(145,112,230,0.42);text-transform:uppercase;margin-bottom:13px;}
+.rec-drink{font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:600;color:#f0d8b0;line-height:1.2;margin-bottom:8px;text-shadow:0 0 30px rgba(180,110,30,0.15);}
+.rec-serve{display:inline-block;font-family:'DM Mono',monospace;font-size:9px;color:rgba(170,138,240,0.48);background:rgba(110,80,195,0.08);border:1px solid rgba(110,80,195,0.16);border-radius:20px;padding:3px 11px;}
+.rec-body{
+  padding:15px 20px 18px;
+  background:rgba(255,225,155,0.018);
+  border:1px solid rgba(110,80,190,0.16);
+  border-top:none;
+  border-radius:0 0 12px 12px;
+  font-size:14px;color:rgba(235,215,182,0.68);line-height:1.95;font-style:italic;
+}
+
+/* quiz */
+.quiz{background:rgba(255,225,155,0.025);border:1px solid rgba(185,135,55,0.18);border-radius:12px;padding:17px;border-top-left-radius:2px;}
+.quiz-lbl{font-family:'DM Mono',monospace;font-size:7px;letter-spacing:.45em;color:rgba(185,135,55,0.42);text-transform:uppercase;margin-bottom:10px;}
+.quiz-q{font-family:'Cormorant Garamond',serif;font-size:18px;color:#f0d8b0;line-height:1.55;margin-bottom:13px;}
+.quiz-opts{display:flex;flex-direction:column;gap:5px;}
+.opt{background:rgba(255,225,155,0.02);border:1px solid rgba(185,135,55,0.15);border-radius:7px;padding:8px 12px;cursor:pointer;display:flex;gap:9px;align-items:center;font-size:14px;color:rgba(235,215,185,0.82);transition:all .14s;text-align:left;}
+.opt:hover:not(:disabled){border-color:rgba(185,135,55,0.4);background:rgba(185,135,55,0.06);transform:translateX(3px);}
+.opt:disabled{cursor:default;}
+.opt.ok{border-color:rgba(70,155,90,0.55);background:rgba(70,155,90,0.09);}
+.opt.ng{border-color:rgba(155,70,70,0.45);background:rgba(155,70,70,0.06);opacity:.6;}
+.opt.dim{opacity:.28;}
+.ltr{font-family:'DM Mono',monospace;font-size:10px;color:rgba(185,135,55,0.6);background:rgba(185,135,55,0.08);border:1px solid rgba(185,135,55,0.15);border-radius:4px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.opt.ok .ltr{background:rgba(70,155,90,0.5);color:#e8ffe8;border-color:transparent;}
+.opt.ng .ltr{background:rgba(155,70,70,0.5);color:#ffe8e8;border-color:transparent;}
+.trivia{margin-top:10px;padding:9px 12px;background:rgba(185,135,55,0.04);border-left:2px solid rgba(185,135,55,0.28);border-radius:0 6px 6px 0;font-size:13px;color:rgba(230,210,175,0.52);line-height:1.8;font-style:italic;}
+
+/* typing */
+.typing{display:flex;gap:5px;align-items:center;padding:8px 12px;}
+.dot{width:4px;height:4px;border-radius:50%;background:rgba(185,135,55,0.38);animation:dp 1.3s ease-in-out infinite;}
+.dot:nth-child(2){animation-delay:.22s;}.dot:nth-child(3){animation-delay:.44s;}
+@keyframes dp{0%,80%,100%{opacity:.15;transform:scale(.75);}40%{opacity:.9;transform:scale(1);}}
+
+/* bottom */
+.bottom{flex-shrink:0;
+  background:linear-gradient(to top,rgba(12,7,2,0.97) 0%,rgba(14,8,2,0.9) 60%,transparent 100%);
+  backdrop-filter:blur(12px);
+  border-top:1px solid rgba(100,58,15,0.1);
+}
+.hints-wrap{padding:0 20px 8px;display:flex;flex-direction:column;gap:6px;}
+.hints{display:flex;gap:5px;flex-wrap:wrap;}
+.hint{background:rgba(255,225,155,0.025);border:1px solid rgba(200,145,50,0.08);border-radius:20px;padding:5px 12px;font-size:12px;color:rgba(230,210,175,0.35);cursor:pointer;transition:all .16s;}
+.hint:hover{border-color:rgba(185,135,55,0.32);color:rgba(200,155,70,0.75);}
+.mood-btn{width:100%;display:flex;align-items:center;gap:11px;
+  background:rgba(65,38,120,0.06);
+  border:1px solid rgba(85,55,155,0.14);
+  border-radius:10px;padding:10px 15px;cursor:pointer;transition:all .22s;text-align:left;
+}
+.mood-btn:hover{background:rgba(75,48,140,0.11);border-color:rgba(115,80,200,0.28);}
+.mood-btn-inner{flex:1;}
+.mood-btn-title{font-size:13px;color:rgba(155,128,230,0.68);font-family:Georgia,serif;}
+.mood-btn-sub{font-size:10px;color:rgba(135,110,200,0.35);margin-top:2px;font-family:'DM Mono',monospace;}
+.mood-btn-arrow{font-size:11px;color:rgba(125,95,195,0.3);}
+.inp-wrap{padding:10px 20px 14px;display:flex;gap:8px;align-items:flex-end;}
+.inp{flex:1;background:rgba(255,225,155,0.028);border:1px solid rgba(180,125,40,0.1);border-radius:10px;padding:10px 14px;color:rgba(240,225,195,0.9);font-family:Georgia,serif;font-size:15px;resize:none;outline:none;max-height:100px;line-height:1.65;transition:border-color .2s;}
+.inp::placeholder{color:rgba(230,205,165,0.2);}
+.inp:focus{border-color:rgba(180,125,40,0.28);}
+.inp.mood{border-color:rgba(85,58,155,0.18);}
+.inp.mood:focus{border-color:rgba(115,82,210,0.4);}
+.send{background:rgba(180,125,40,0.1);border:1px solid rgba(180,125,40,0.25);color:rgba(200,148,60,0.8);width:38px;height:38px;border-radius:10px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s;}
+.send:hover:not(:disabled){background:rgba(180,125,40,0.2);box-shadow:0 0 12px rgba(180,125,40,0.15);}
+.send:disabled{opacity:.25;cursor:default;}
+`;
+
+// ───────────────────────────────────────────────────────────────
+//  APP
+// ───────────────────────────────────────────────────────────────
+export default function App() {
+  const [bt, setBt] = useState(null);
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [score, setScore] = useState(0);
+  const [totalQ, setTotalQ] = useState(0);
+  const [visitCount, setVisitCount] = useState(0);
+  const [topics, setTopics] = useState([]);
+  const [moodMode, setMoodMode] = useState(false);
+  const [moodStep, setMoodStep] = useState(0);
+  const [lastRec, setLastRec] = useState(null);
+  const [timeContext] = useState(getTimeContext);
+
+  const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+  const msgsRef = useRef([]);
+  const moodModeRef = useRef(false);
+  const moodStepRef = useRef(0);
+  const btRef = useRef(null);
+  const topicsRef = useRef([]);
+  const visitCountRef = useRef(0);
+  const lastRecRef = useRef(null);
+
+  useEffect(() => { msgsRef.current = msgs; }, [msgs]);
+  useEffect(() => { moodModeRef.current = moodMode; }, [moodMode]);
+  useEffect(() => { moodStepRef.current = moodStep; }, [moodStep]);
+  useEffect(() => { btRef.current = bt; }, [bt]);
+  useEffect(() => { topicsRef.current = topics; }, [topics]);
+  useEffect(() => { visitCountRef.current = visitCount; }, [visitCount]);
+  useEffect(() => { lastRecRef.current = lastRec; }, [lastRec]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, loading]);
+
+  const relLabel = visitCount <= 1 ? "はじめまして" : visitCount <= 5 ? "顔なじみ" : visitCount <= 15 ? "常連" : "旧友";
+
+  const startChat = (bartender) => {
+    const saved = JSON.parse(localStorage.getItem(`bar_${bartender.id}`) || '{"visits":0,"topics":[]}');
+    const savedRec = JSON.parse(localStorage.getItem(`bar_${bartender.id}_lastrec`) || 'null');
+    const v = saved.visits + 1;
+    setBt(bartender);
+    setVisitCount(v);
+    setTopics(saved.topics || []);
+    setLastRec(savedRec);
+    setMoodMode(false);
+    setMoodStep(0);
+    const greeting = saved.visits > 5
+      ? `…おう、また来たか。今夜は何にする？`
+      : saved.visits > 1 ? `いらっしゃい、また来てくれたか。` : bartender.greeting;
+    setMsgs([{ role: "bt", text: greeting }]);
+    setScore(0); setTotalQ(0);
+    localStorage.setItem(`bar_${bartender.id}`, JSON.stringify({ visits: v, topics: saved.topics || [] }));
+  };
+
+  const sendMsg = useCallback(async (text, triggerMood = false) => {
+    if (!text.trim() || loading) return;
+
+    const isMood = triggerMood || moodModeRef.current;
+    const step = moodStepRef.current;
+    const nextStep = isMood ? step + 1 : 0;
+    const currentBt = btRef.current;
+    const currentTopics = topicsRef.current;
+    const currentVisitCount = visitCountRef.current;
+    const currentLastRec = lastRecRef.current;
+
+    const userMsg = { role: "user", text: text.trim(), hidden: triggerMood };
+    const allMsgs = [...msgsRef.current, userMsg];
+
+    setMsgs(allMsgs);
+    setInput("");
+    setLoading(true);
+    if (isMood) setMoodStep(nextStep);
+
+    const apiMsgs = allMsgs
+      .map(m => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: m.role === "bt" && m.quiz
+          ? `${m.text || ""}\nQUIZ:${JSON.stringify(m.quiz)}`
+          : m.role === "bt" && m.rec
+          ? `${m.message || ""}\nRECOMMEND:${JSON.stringify(m.rec)}`
+          : m.text || "",
+      }))
+      .filter(m => m.content);
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: buildSystem(currentBt, currentVisitCount, currentTopics, isMood, nextStep, currentLastRec, timeContext),
+          messages: apiMsgs,
+        }),
+      });
+      const data = await res.json();
+      const raw = data.content?.map(c => c.text || "").join("") || "…";
+      const { message, quiz, rec } = parseResponse(raw);
+
+      const newTopics = extractTopic(text, message + (rec?.text || ""));
+      const mergedTopics = [...new Set([...currentTopics, ...newTopics])].slice(-12);
+      setTopics(mergedTopics);
+      localStorage.setItem(`bar_${currentBt.id}`, JSON.stringify({ visits: currentVisitCount, topics: mergedTopics }));
+
+      if (rec) {
+        const recData = { drink: rec.drink, serve: rec.serve };
+        setLastRec(recData);
+        localStorage.setItem(`bar_${currentBt.id}_lastrec`, JSON.stringify(recData));
+        setTimeout(() => { setMoodMode(false); setMoodStep(0); }, 200);
+      }
+
+      if (quiz) setTotalQ(p => p + 1);
+      setMsgs(p => [...p, { role: "bt", message, text: message, quiz, rec, answered: false }]);
+    } catch {
+      setMsgs(p => [...p, { role: "bt", text: "…少し待ってくれ。" }]);
+    }
+
+    setLoading(false);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [loading, timeContext]);
+
+  const startMoodMode = () => {
+    setMoodMode(true);
+    setMoodStep(0);
+    sendMsg("今夜の気分に合った一杯を選んでほしい", true);
+  };
+
+  const answer = useCallback((msgIdx, ci) => {
+    setMsgs(prev => prev.map((m, i) => {
+      if (i !== msgIdx || m.answered) return m;
+      if (ci === m.quiz.answer) setScore(s => s + 1);
+      return { ...m, answered: true, selected: ci };
+    }));
+  }, []);
+
+  const onKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(input); }
+  };
+  const letters = ["A","B","C","D"];
+  const visibleMsgs = msgs.filter(m => !m.hidden);
+
+  // ── SELECT ──
+  // ── SELECT / HD2D ──
+  const bokehData = [
+    {w:180,h:180,l:12,t:18,blur:"60px",op:0.06,dur:"7s",dy:"-18px",ds:1.08,color:"rgba(200,140,50,1)"},
+    {w:80,h:80,l:55,t:8,blur:"30px",op:0.09,dur:"5s",dy:"-10px",ds:0.95,color:"rgba(220,170,80,1)"},
+    {w:120,h:120,l:75,t:22,blur:"45px",op:0.07,dur:"9s",dy:"-14px",ds:1.04,color:"rgba(180,110,30,1)"},
+    {w:50,h:50,l:38,t:35,blur:"20px",op:0.12,dur:"6s",dy:"-8px",ds:1.1,color:"rgba(240,190,100,1)"},
+    {w:90,h:90,l:5,t:55,blur:"35px",op:0.05,dur:"11s",dy:"-20px",ds:0.9,color:"rgba(160,90,20,1)"},
+    {w:60,h:60,l:88,t:42,blur:"22px",op:0.1,dur:"8s",dy:"-12px",ds:1.06,color:"rgba(230,160,60,1)"},
+    {w:30,h:30,l:48,t:60,blur:"12px",op:0.15,dur:"4s",dy:"-6px",ds:1.15,color:"rgba(255,210,120,1)"},
+    {w:200,h:200,l:85,t:5,blur:"80px",op:0.04,dur:"13s",dy:"-22px",ds:0.92,color:"rgba(140,80,15,1)"},
+  ];
+  const particleData = [
+    {l:"22%",b:"32%",dur:"8s",dx:"12px",delay:"0s"},
+    {l:"45%",b:"28%",dur:"11s",dx:"-8px",delay:"2s"},
+    {l:"67%",b:"35%",dur:"9s",dx:"15px",delay:"4s"},
+    {l:"33%",b:"40%",dur:"13s",dx:"-5px",delay:"1s"},
+    {l:"78%",b:"30%",dur:"7s",dx:"10px",delay:"5s"},
+    {l:"55%",b:"45%",dur:"10s",dx:"-12px",delay:"3s"},
+    {l:"15%",b:"38%",dur:"12s",dx:"8px",delay:"6s"},
+    {l:"88%",b:"33%",dur:"8s",dx:"-10px",delay:"1.5s"},
+  ];
+
+  if (!bt) return (
+    <>
+      <style>{css}</style>
+      <div className="root">
+        <div className="sel">
+          {/* layered background */}
+          <div className="sel-bg"/>
+          <div className="sel-ceil"/>
+          <div className="sel-floor"/>
+          <div className="sel-counter"><div className="sel-counter-line"/></div>
+
+          {/* bokeh lights */}
+          {bokehData.map((b,i) => (
+            <div key={i} className="bokeh" style={{
+              width:b.w,height:b.h,left:`${b.l}%`,top:`${b.t}%`,
+              background:b.color,
+              "--blur":b.blur,"--op":b.op,"--dur":b.dur,"--dy":b.dy,"--ds":b.ds
+            }}/>
+          ))}
+
+          {/* dust particles */}
+          {particleData.map((p,i) => (
+            <div key={i} className="particle" style={{
+              left:p.l,bottom:p.b,"--dur":p.dur,"--dx":p.dx,animationDelay:p.delay
+            }}/>
+          ))}
+
+          {/* title */}
+          <div className="sel-title-wrap">
+            <div className="sel-label">tonight's guide</div>
+            <div className="sel-title"><em>Bar</em> Sensei</div>
+            <div className="sel-sub">誰と飲む？</div>
+          </div>
+
+          {/* bartenders at counter */}
+          <div className="bt-row">
+            {BARTENDERS.map(b => (
+              <div key={b.id} className="bt-slot" onClick={() => startChat(b)}>
+                <div className="bt-glow" style={{background:b.color}}/>
+                <div className="bt-silhouette" style={{background:b.color}}/>
+                <div className="bt-name" style={{color:"#f0d8b0"}}>{b.name}</div>
+                <div className="bt-info">
+                  <div style={{color:b.color,marginBottom:"2px"}}>{b.title}</div>
+                  <div>{b.location}</div>
+                  <div style={{marginTop:"3px",opacity:0.7}}>{b.specialty.split("・")[0]}…</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="sel-enter">approach to begin</div>
+        </div>
+      </div>
+    </>
+  );
+
+  // ── CHAT ──
+  const chatBokeh = [
+    {w:220,h:220,l:"-5%",t:"5%",blur:"80px",op:0.04,dur:"9s",dy:"-15px",ds:1.06,color:bt.color},
+    {w:140,h:140,l:"80%",t:"15%",blur:"55px",op:0.05,dur:"12s",dy:"-10px",ds:0.94,color:bt.color},
+    {w:80,h:80,l:"45%",t:"40%",blur:"30px",op:0.03,dur:"7s",dy:"-8px",ds:1.1,color:"rgba(220,170,80,1)"},
+    {w:180,h:180,l:"60%",t:"65%",blur:"70px",op:0.04,dur:"11s",dy:"-18px",ds:0.96,color:bt.color},
+    {w:100,h:100,l:"10%",t:"70%",blur:"40px",op:0.035,dur:"8s",dy:"-12px",ds:1.05,color:"rgba(180,110,30,1)"},
+  ];
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="root">
+        <div className="chat-wrap">
+          {/* atmospheric scene */}
+          <div className="chat-scene"/>
+          <div className="chat-ceil"/>
+          <div className="chat-counter-bg"><div className="chat-counter-line"/></div>
+          {chatBokeh.map((b,i) => (
+            <div key={i} className="chat-bokeh" style={{
+              width:b.w,height:b.h,left:b.l,top:b.t,
+              background:b.color,
+              "--blur":b.blur,"--op":b.op,"--dur":b.dur,"--dy":b.dy,"--ds":b.ds
+            }}/>
+          ))}
+        <div className="chat">
+
+          <div className="header" style={{
+            borderBottomColor: bt.border,
+            background: `linear-gradient(to bottom, rgba(4,2,8,0.94), rgba(6,3,10,0.78))`,
+            boxShadow: `0 1px 30px ${bt.color}18, inset 0 -1px 0 ${bt.color}15`,
+          }}>
+            <div>
+              <div className="h-name">{bt.name}</div>
+              <div className="h-sub">{bt.location}</div>
+            </div>
+            <div className="h-right">
+              <div className="rel-pill">{relLabel}（{visitCount}回目）</div>
+              {totalQ > 0 && <div className="score-pill">{score}/{totalQ}</div>}
+              <button className="back-btn" onClick={() => setBt(null)}>← 変える</button>
+            </div>
+          </div>
+
+          {moodMode && (
+            <div className="mood-banner">
+              <div className="mood-pulse"/>
+              <span className="mood-label">今夜の一杯を選んでいる</span>
+              <button className="mood-exit" onClick={() => { setMoodMode(false); setMoodStep(0); }}>キャンセル</button>
+            </div>
+          )}
+
+          <div className="msgs">
+            {visibleMsgs.map((m, idx) => {
+              const realIdx = msgs.indexOf(m);
+              return (
+                <div key={idx} className={`row ${m.role === "user" ? "user" : ""}`}>
+                  <div className={`av ${m.role === "user" ? "me" : "bt"}`}
+                    style={m.role !== "user" ? {color: bt.color, borderColor: bt.border, fontSize: "11px", fontFamily: "'DM Mono', monospace", letterSpacing: "0.02em"} : {}}>
+                    {m.role === "user" ? "you" : bt.name.split(" ")[0].slice(0,3).toLowerCase()}
+                  </div>
+                  <div className="bubble">
+                    {m.rec ? (
+                      <>
+                        {m.message && <div className="txt" style={{borderLeftColor: `${bt.color}30`}}>{m.message}</div>}
+                        <div className="rec-ripple" style={{"--bt-color": bt.color}}>
+                          <div className="rec-card">
+                            <div className="rec-top">
+                              <div className="rec-eyebrow">今夜の一杯</div>
+                              <div className="rec-drink">{m.rec.drink}</div>
+                              <div className="rec-serve">{m.rec.serve}</div>
+                            </div>
+                            <div className="rec-body">{m.rec.text}</div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      m.text && <div className="txt" style={{borderLeftColor: `${bt.color}28`}}>{m.text}</div>
+                    )}
+                    {m.quiz && (
+                      <div className="quiz">
+                        <div className="quiz-lbl">── クイズ ──</div>
+                        <div className="quiz-q">{m.quiz.q}</div>
+                        <div className="quiz-opts">
+                          {m.quiz.choices.map((c, ci) => {
+                            let cls = "opt";
+                            if (m.answered) cls += ci === m.quiz.answer ? " ok" : ci === m.selected ? " ng" : " dim";
+                            return (
+                              <button key={ci} className={cls} disabled={m.answered} onClick={() => answer(realIdx, ci)}>
+                                <span className="ltr">{letters[ci]}</span>{c}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {m.answered && <div className="trivia">{m.quiz.trivia}</div>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {loading && (
+              <div className="row">
+                <div className="av bt"
+                style={{color: bt.color, borderColor: bt.border, fontSize: "11px", fontFamily: "'DM Mono', monospace"}}>
+                {bt.name.split(" ")[0].slice(0,3).toLowerCase()}
+              </div>
+                <div className="bubble">
+                  <div className="txt" style={{padding:"9px 15px"}}>
+                    <div className="typing"><div className="dot"/><div className="dot"/><div className="dot"/></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef}/>
+          </div>
+
+          <div className="bottom">
+            {!moodMode && (
+              <div className="hints-wrap">
+                {visibleMsgs.length <= 2 && (
+                  <div className="hints">
+                    {bt.hints.map((h,i) => (
+                      <div key={i} className="hint" onClick={() => sendMsg(h)}>{h}</div>
+                    ))}
+                  </div>
+                )}
+                <button className="mood-btn" onClick={startMoodMode}>
+                  <span className="mood-btn-inner">
+                    <div className="mood-btn-title">今夜の気分で一杯選んでもらう</div>
+                    <div className="mood-btn-sub">{bt.name} が読んで、一本を断言する</div>
+                  </span>
+                  <span className="mood-btn-arrow">→</span>
+                </button>
+              </div>
+            )}
+            <div className="inp-wrap">
+              <textarea
+                ref={inputRef}
+                className={`inp${moodMode ? " mood" : ""}`}
+                rows={1}
+                placeholder={moodMode ? "今日のこと、話してみて…" : `${bt.name}に話しかける…`}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={onKey}
+              />
+              <button className="send" disabled={loading || !input.trim()} onClick={() => sendMsg(input)}>↑</button>
+            </div>
+          </div>
+
+        </div>
+        </div>
+      </div>
+    </>
+  );
+}
